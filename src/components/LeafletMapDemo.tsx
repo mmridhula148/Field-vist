@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import {
   Layers,
   Eye,
@@ -55,9 +57,9 @@ export const LeafletMapDemo: React.FC = () => {
     const initMap = async () => {
       if (typeof window === 'undefined' || !mapContainerRef.current) return;
 
-      const L = (window as any).L;
-      if (!L) {
-        console.warn('Leaflet not loaded globally yet.');
+      const leaflet = L || (window as any).L;
+      if (!leaflet) {
+        console.warn('Leaflet not loaded yet.');
         return;
       }
 
@@ -158,7 +160,6 @@ export const LeafletMapDemo: React.FC = () => {
 
   // Render sample markers for: Vegetation, Built-up Area, Agricultural Area, Water Body
   const renderDemoMarkers = () => {
-    const L = (window as any).L;
     if (!L || !markersGroupRef.current) return;
 
     markersGroupRef.current.clearLayers();
@@ -251,7 +252,6 @@ export const LeafletMapDemo: React.FC = () => {
   };
 
   const renderSimulatedLayers = () => {
-    const L = (window as any).L;
     if (!L || !mapInstanceRef.current || !layersGroupRef.current) return;
 
     layersGroupRef.current.clearLayers();
