@@ -1,22 +1,864 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en" class="scroll-smooth">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="./satellite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Land Cover Analysis Using Satellite Imagery and Deep Learning — An academic immersion research project exploring super-resolution mapping from Sentinel-2 data." />
-    <meta name="theme-color" content="#080d1a" />
-    <title>Land Cover Analysis | Satellite Imagery & Deep Learning</title>
-    <!-- Google Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <!-- Leaflet CSS & JS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  </head>
-  <body class="bg-[#080d1a] text-slate-100 font-sans antialiased selection:bg-cyan-500 selection:text-black">
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Land Cover Analysis Using Satellite Imagery and Deep Learning | Immersion Project</title>
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            satellite: {
+              400: '#38bdf8',
+              500: '#0ea5e9',
+              600: '#0284c7',
+              950: '#082f49',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- React 18 & Babel UMD for zero-dependency standalone execution -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+  <style>
+    body {
+      background-color: #080d1a;
+      color: #f1f5f9;
+      font-family: 'Inter', sans-serif;
+    }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #080d1a; }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #0ea5e9; }
+    .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.5); }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.3); border-radius: 3px; }
+    .leaflet-container { background: #050811 !important; }
+    .leaflet-control-zoom { border: 1px solid rgba(56, 189, 248, 0.3) !important; border-radius: 8px !important; overflow: hidden; }
+    .leaflet-control-zoom a { background-color: #0f172a !important; color: #38bdf8 !important; border-bottom: 1px solid rgba(56, 189, 248, 0.2) !important; }
+    @keyframes probePulse {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(6, 182, 212, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(6, 182, 212, 0); }
+    }
+    .custom-probe-pin { animation: probePulse 2s infinite; }
+  </style>
+</head>
+<body class="selection:bg-cyan-500 selection:text-slate-950">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // --- DATA ---
+    const FIELD_OBSERVATIONS = [
+      {
+        id: "obs-1",
+        title: "Urban & Residential Structures",
+        category: "Built Environment",
+        groundDescription: "Individual roof profiles, building footprints (approx. 8–15 m span), concrete pavement, and narrow intra-building spaces observed clearly at eye level.",
+        satelliteChallenge: "A single 10 m x 10 m Sentinel-2 pixel (100 m²) frequently encloses both a building rooftop and adjacent pavement, producing mixed spectral signatures.",
+        icon: "🏢",
+        tags: ["Built-up", "Impervious Surface", "100 m² Footprint"],
+        placeholder: "Field Observation Photo: Structural Footprints & Alleys [Location to be added]"
+      },
+      {
+        id: "obs-2",
+        title: "Road & Transportation Networks",
+        category: "Infrastructure",
+        groundDescription: "Asphalt single-lane roads (3.5–5 m width), unpaved dirt pathways (2–3 m), and drainage trenches flanking transportation corridors.",
+        satelliteChallenge: "Road widths are significantly sub-pixel relative to 10 m GSD. Linear continuity is fragmented as road pixels blend into adjacent soil or grassy verges.",
+        icon: "🛣️",
+        tags: ["Sub-pixel Linear", "Transportation", "Corridor"],
+        placeholder: "Field Observation Photo: Linear Corridors & Road Segments [Location to be added]"
+      },
+      {
+        id: "obs-3",
+        title: "Vegetation & Tree Canopies",
+        category: "Natural Canopy",
+        groundDescription: "Dense multi-tiered tree canopies, isolated roadside trees, hedgerows, and heterogeneous shrub vegetation with variable foliage health.",
+        satelliteChallenge: "Individual tree crowns cannot be resolved; canopies are aggregated into a single spatial average, masking localized crown dieback or micro-biodiversity.",
+        icon: "🌳",
+        tags: ["Canopy", "Red Edge", "Chlorophyll"],
+        placeholder: "Field Observation Photo: Tree Crown Heterogeneity [Location to be added]"
+      },
+      {
+        id: "obs-4",
+        title: "Agricultural Parcels & Cropland",
+        category: "Agriculture",
+        groundDescription: "Smallholder agricultural plots (often under 0.2 hectares), furrow lines, bunds, irrigation ditches, and staggered crop phenology stages.",
+        satelliteChallenge: "Field boundary bunds (0.5–1 m wide) disappear completely; spectral response from adjacent plots with differing crops blend at parcel margins.",
+        icon: "🌾",
+        tags: ["Smallholder Plots", "Crop Phenology", "Field Bunds"],
+        placeholder: "Field Observation Photo: Agricultural Plot Margins & Bunds [Location to be added]"
+      },
+      {
+        id: "obs-5",
+        title: "Water Bodies & Retention Basins",
+        category: "Hydrology",
+        groundDescription: "Community retention ponds, shallow ephemeral streams, marshy wetland edges, and drainage culverts with varying turbidity and weed cover.",
+        satelliteChallenge: "Narrow channels and water-land interfaces experience spectral contamination from shoreline soil and reeds, leading to misclassified shoreline boundaries.",
+        icon: "💧",
+        tags: ["Hydrology", "Turbidity", "Edge Contamination"],
+        placeholder: "Field Observation Photo: Water Body Margin & Turbidity [Location to be added]"
+      },
+      {
+        id: "obs-6",
+        title: "Open & Barren Land",
+        category: "Terrestrial Surface",
+        groundDescription: "Exposed sandy loam, dry compacted soil, active excavation zones, gravel deposits, and sparse seasonal ground cover.",
+        satelliteChallenge: "High spectral similarity between dry bare soil, weathered concrete, and fallow agricultural fields complicates accurate land-use categorization.",
+        icon: "⛰️",
+        tags: ["Soil Matrix", "Spectral Confusion", "Fallow"],
+        placeholder: "Field Observation Photo: Barren Surface & Exposed Soil [Location to be added]"
+      }
+    ];
+
+    const SATELLITE_BANDS = [
+      { band: "B1", name: "Coastal Aerosol", centralWavelength: "443 nm", spatialResolution: "60 m", purpose: "Atmospheric aerosol correction, coastal bathymetry, water column analysis", category: "Atmospheric" },
+      { band: "B2", name: "Blue", centralWavelength: "490 nm", spatialResolution: "10 m", purpose: "True color visualization, soil/vegetation differentiation, atmospheric scattering", category: "VNIR" },
+      { band: "B3", name: "Green", centralWavelength: "560 nm", spatialResolution: "10 m", purpose: "True color imaging, peak vegetation reflectance, water turbidity assessment", category: "VNIR" },
+      { band: "B4", name: "Red", centralWavelength: "665 nm", spatialResolution: "10 m", purpose: "Chlorophyll absorption peak, vegetation vitality, NDVI calculation", category: "VNIR" },
+      { band: "B5", name: "Vegetation Red Edge 1", centralWavelength: "705 nm", spatialResolution: "20 m", purpose: "Vegetation stress, chlorophyll content estimation, crop health tracking", category: "Red Edge" },
+      { band: "B6", name: "Vegetation Red Edge 2", centralWavelength: "740 nm", spatialResolution: "20 m", purpose: "Leaf area index (LAI), canopy biochemistry, canopy biomass quantification", category: "Red Edge" },
+      { band: "B7", name: "Vegetation Red Edge 3", centralWavelength: "783 nm", spatialResolution: "20 m", purpose: "Canopy structure, senescent vegetation monitoring, edge slope index", category: "Red Edge" },
+      { band: "B8", name: "Broad NIR (Near Infrared)", centralWavelength: "842 nm", spatialResolution: "10 m", purpose: "Biomass estimation, land-water boundary delineation, standard NDVI/NDWI", category: "VNIR" },
+      { band: "B8A", name: "Narrow NIR", centralWavelength: "865 nm", spatialResolution: "20 m", purpose: "Atmospheric water vapour correction, detailed vegetation spectral analysis", category: "VNIR" },
+      { band: "B9", name: "Water Vapour", centralWavelength: "945 nm", spatialResolution: "60 m", purpose: "Atmospheric absorption modeling, column water vapor retrieval", category: "Atmospheric" },
+      { band: "B10", name: "SWIR - Cirrus", centralWavelength: "1375 nm", spatialResolution: "60 m", purpose: "High-altitude cirrus cloud detection and scene contamination masking", category: "Atmospheric" },
+      { band: "B11", name: "SWIR 1", centralWavelength: "1610 nm", spatialResolution: "20 m", purpose: "Snow/ice/cloud discrimination, canopy moisture content, soil moisture", category: "SWIR" },
+      { band: "B12", name: "SWIR 2", centralWavelength: "2190 nm", spatialResolution: "20 m", purpose: "Geological mineral mapping, burned area identification, soil salinity", category: "SWIR" }
+    ];
+
+    const METHODOLOGY_STEPS = [
+      { stepNumber: "01", title: "Sentinel-2 Imagery Ingestion", shortDesc: "Acquisition of Copernicus Sentinel-2 Level-2A surface reflectance tiles.", detailedDesc: "Automated retrieval of Bottom-Of-Atmosphere (BOA) corrected Level-2A granules covering the designated study area. The ingestion pipeline extracts all 13 spectral bands alongside sun-sensor geometry metadata.", inputs: "Copernicus Open Access Hub (SAFE/GeoTIFF format)", outputs: "Calibrated 13-band multispectral raster stack (12-bit DN surface reflectance)", tools: ["Sentinel Hub API", "Rasterio", "GDAL"] },
+      { stepNumber: "02", title: "Cloud & Shadow Masking", shortDesc: "Screening opaque clouds, cirrus formations, and cloud shadows.", detailedDesc: "Application of Scene Classification Layer (SCL) masks and Band 10 cirrus thresholds to identify contaminated pixels. Invalid pixels are flagged or filled using multi-temporal compositing algorithms.", inputs: "Level-2A SCL quality bands, QA60 cloud bitmask", outputs: "Binary cloud/shadow validation mask & cleaned reflectance arrays", tools: ["NumPy", "SCL Classifier", "Rasterio Mask"] },
+      { stepNumber: "03", title: "Normalization & Calibration", shortDesc: "Radiometric scaling, outlier removal, and spectral index synthesis.", detailedDesc: "Min-Max normalization of DN values to standard [0.0, 1.0] float32 tensors. Calculation of derived spectral indices (NDVI, NDWI, NDBI, SAVI) to augment neural network spatial-spectral feature representations.", inputs: "13-band BOA reflectance tensors", outputs: "Normalized float32 feature tensor + 4 auxiliary spectral index channels", tools: ["NumPy", "SciPy", "TorchVision"] },
+      { stepNumber: "04", title: "Band Alignment & Resampling", shortDesc: "Harmonizing 20 m and 60 m bands to a shared spatial grid.", detailedDesc: "Sub-pixel geometric co-registration and bicubic / cubic-spline interpolation of lower-resolution bands (20 m and 60 m) to match the native 10 m grid coordinate reference system (CRS).", inputs: "Mixed resolution bands (10 m, 20 m, 60 m)", outputs: "Unified 10 m Ground Sample Distance (GSD) co-registered raster array", tools: ["GDAL Warp", "Rasterio Affine Transformation"] },
+      { stepNumber: "05", title: "Image Tiling & Patch Extraction", shortDesc: "Subdividing large regional scenes into overlapping sub-patches.", detailedDesc: "Extraction of 256x256 pixel tiles with a 25% spatial overlap (stride 192) to maintain contextual coherence across patch boundaries during deep neural network batch processing.", inputs: "Full-scene multi-band aligned raster", outputs: "Directory of 256x256xN GeoTIFF patches with spatial bounding boxes", tools: ["Custom Python Patch Generator", "GeoPandas"] },
+      { stepNumber: "06", title: "Deep Learning Model Processing", shortDesc: "Feature extraction across spectral and spatial receptive fields.", detailedDesc: "Forward pass through a deep neural architecture (Convolutional / Residual U-Net) designed to extract multi-scale spatial textures while preserving multispectral correlation across channels.", inputs: "Batch of normalized multispectral patches (B, C, H, W)", outputs: "High-dimensional latent feature representation tensor", tools: ["PyTorch", "TorchVision", "CUDA"] },
+      { stepNumber: "07", title: "Super-Resolution Mapping", shortDesc: "Reconstruction of 4x finer spatial imagery (~2.5 m equivalent GSD).", detailedDesc: "Sub-pixel convolutional upsampling layers reconstruct sharp structural edges, resolving linear road corridors, building outlines, and intra-field boundaries originally blurred in 10 m pixels.", inputs: "Latent feature representations from encoder-decoder", outputs: "Enhanced fine-resolution 4x multi-channel reconstructed raster", tools: ["PyTorch PixelShuffle", "Sub-pixel Conv2D"] },
+      { stepNumber: "08", title: "Land-Cover Semantic Mapping", shortDesc: "Pixel-wise classification into standard LULC categories.", detailedDesc: "A semantic segmentation head assigns each fine-resolution pixel to one of 6 target classes: Water Bodies, Built-up Structures, Dense Forest, Agricultural Cropland, Shrub/Grassland, and Bare Soil.", inputs: "Super-resolved feature maps", outputs: "Categorical Land Use / Land Cover (LULC) thematic raster", tools: ["Softmax Classifier", "Cross-Entropy Loss Layer"] },
+      { stepNumber: "09", title: "Confidence & Uncertainty Estimation", shortDesc: "Quantifying model prediction confidence and epistemic uncertainty.", detailedDesc: "Application of Monte Carlo Dropout passes during inference to compute predictive entropy and variance across output classes, producing an interpretable spatial uncertainty map.", inputs: "Multi-pass stochastic forward evaluations", outputs: "Per-pixel uncertainty raster [0.0 = High Confidence, 1.0 = Ambiguous]", tools: ["Bayesian MC-Dropout", "Shannon Entropy Formula"] },
+      { stepNumber: "10", title: "GIS Visualization & Cartography", shortDesc: "Tiling, projection conversion, and interactive WebGIS deployment.", detailedDesc: "Exporting results as Cloud-Optimized GeoTIFFs (COG) and Slippy Map XYZ tiles, integrated into an interactive WebGIS dashboard with custom colormaps, opacity controls, and vector overlays.", inputs: "Enhanced RGB, LULC raster, and Uncertainty GeoTIFFs", outputs: "Interactive Leaflet map layers, GIS shapefiles, and web service", tools: ["Leaflet", "PostGIS", "GDAL2Tiles", "React"] }
+    ];
+
+    const LAND_COVER_CLASSES = [
+      { id: "water", name: "Water Bodies & Streams", hex: "#0ea5e9" },
+      { id: "builtup", name: "Built-up & Infrastructure", hex: "#ef4444" },
+      { id: "forest", name: "Dense Canopy & Forest", hex: "#10b981" },
+      { id: "cropland", name: "Agricultural Cropland", hex: "#eab308" },
+      { id: "shrub", name: "Shrubland & Grassland", hex: "#84cc16" },
+      { id: "barren", name: "Barren Land & Bare Soil", hex: "#d97706" }
+    ];
+
+    const STUDY_PRESETS = [
+      { id: "tn-agro", name: "Demo Study Area: Tamil Nadu Agro-Corridor", coordinates: [10.7905, 78.7047], zoom: 14, description: "Generic demo region in Central Tamil Nadu exhibiting mixed cropland, irrigation channels, and rural settlements." },
+      { id: "tn-urban", name: "Demo Study Area: Tamil Nadu Peri-Urban Fringe", coordinates: [11.0168, 76.9558], zoom: 14, description: "Generic demo area in Western Tamil Nadu exhibiting industrial-residential clusters and road corridors." },
+      { id: "tn-wetland", name: "Demo Study Area: Tamil Nadu Lake Basin", coordinates: [12.9249, 80.1300], zoom: 14, description: "Generic demo basin in Eastern Tamil Nadu featuring water bodies and wetland vegetation buffers." }
+    ];
+
+    // --- MAIN APP COMPONENT ---
+    function App() {
+      const [activeSection, setActiveSection] = useState('hero');
+      const [sliderPos, setSliderPos] = useState(50);
+      const [showGrid, setShowGrid] = useState(true);
+      const [selectedObs, setSelectedObs] = useState(FIELD_OBSERVATIONS[0]);
+      const [customPhotos, setCustomPhotos] = useState({});
+      const [selectedStep, setSelectedStep] = useState(METHODOLOGY_STEPS[0]);
+      const [selectedBandRes, setSelectedBandRes] = useState('All');
+      const [mapLayer, setMapLayer] = useState('landcover');
+      const [mapOpacity, setMapOpacity] = useState(85);
+      const [selectedPreset, setSelectedPreset] = useState(STUDY_PRESETS[0]);
+      const [showDemoPins, setShowDemoPins] = useState(true);
+      const [probeData, setProbeData] = useState({
+        lat: 10.7905, lng: 78.7047, predictedClass: 'Agricultural Cropland', classColor: '#eab308', confidence: 94.2, b2: 0.082, b3: 0.124, b4: 0.068, b8: 0.485
+      });
+
+      const mapContainerRef = useRef(null);
+      const mapRef = useRef(null);
+      const layerGroupRef = useRef(null);
+      const markersGroupRef = useRef(null);
+
+      // Handle photo upload
+      const handlePhotoUpload = (e, id) => {
+        const file = e.target.files?.[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+            setCustomPhotos(prev => ({ ...prev, [id]: ev.target.result }));
+          };
+          reader.readAsDataURL(file);
+        }
+      };
+
+      // Leaflet Map Effect
+      useEffect(() => {
+        if (!mapContainerRef.current || !window.L) return;
+
+        if (!mapRef.current) {
+          const map = L.map(mapContainerRef.current, {
+            center: selectedPreset.coordinates,
+            zoom: selectedPreset.zoom,
+            zoomControl: false
+          });
+
+          // OpenStreetMap Standard Tiles (No API key required)
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors',
+            maxZoom: 19
+          }).addTo(map);
+
+          L.control.zoom({ position: 'bottomright' }).addTo(map);
+          layerGroupRef.current = L.layerGroup().addTo(map);
+          markersGroupRef.current = L.layerGroup().addTo(map);
+          mapRef.current = map;
+
+          map.on('click', (e) => {
+            const lat = parseFloat(e.latlng.lat.toFixed(5));
+            const lng = parseFloat(e.latlng.lng.toFixed(5));
+            const hash = Math.abs(Math.sin(lat * 1000 + lng * 2000));
+            const classIdx = Math.floor(hash * LAND_COVER_CLASSES.length);
+            const chosen = LAND_COVER_CLASSES[classIdx];
+            const conf = parseFloat((85 + hash * 14.5).toFixed(1));
+
+            setProbeData({
+              lat, lng, predictedClass: chosen.name, classColor: chosen.hex,
+              confidence: conf, b2: parseFloat((0.04 + hash * 0.08).toFixed(3)),
+              b3: parseFloat((0.06 + hash * 0.10).toFixed(3)), b4: parseFloat((0.03 + hash * 0.09).toFixed(3)),
+              b8: parseFloat((0.25 + hash * 0.45).toFixed(3))
+            });
+          });
+        }
+
+        renderMapOverlay();
+        renderMarkers();
+      }, [selectedPreset, mapLayer, mapOpacity, showDemoPins]);
+
+      const renderMarkers = () => {
+        if (!mapRef.current || !markersGroupRef.current || !window.L) return;
+        markersGroupRef.current.clearLayers();
+        if (!showDemoPins) return;
+
+        const [lat, lng] = selectedPreset.coordinates;
+        const pts = [
+          { name: 'Vegetation Sample', color: '#10b981', bg: '#10b981', symbol: '🌲', coords: [lat + 0.0045, lng - 0.0055], desc: 'Sample canopy segmentation point.' },
+          { name: 'Built-up Sample', color: '#ef4444', bg: '#ef4444', symbol: '🏢', coords: [lat - 0.0035, lng + 0.0045], desc: 'Sample building footprint point.' },
+          { name: 'Agricultural Sample', color: '#eab308', bg: '#eab308', symbol: '🌾', coords: [lat + 0.0055, lng + 0.0050], desc: 'Sample cropland parcel point.' },
+          { name: 'Water Body Sample', color: '#0ea5e9', bg: '#0ea5e9', symbol: '💧', coords: [lat - 0.0050, lng - 0.0045], desc: 'Sample water mask demarcation point.' }
+        ];
+
+        pts.forEach(p => {
+          const icon = L.divIcon({
+            className: 'custom-demo-pin',
+            html: `<div style="width:28px;height:28px;border-radius:50%;background:${p.bg};color:white;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 4px 6px rgba(0,0,0,0.3);border:2px solid #0f172a;">${p.symbol}</div>`,
+            iconSize: [28, 28],
+            iconAnchor: [14, 14]
+          });
+          const popup = `
+            <div style="font-family:sans-serif;color:#0f172a;min-width:180px;">
+              <div style="font-size:10px;font-weight:bold;color:${p.color};text-transform:uppercase;">Demo / Prototype Data</div>
+              <div style="font-size:12px;font-weight:bold;margin:2px 0;">${p.name}</div>
+              <div style="font-size:11px;color:#475569;">${p.desc}</div>
+              <div style="font-size:9px;color:#94a3b8;margin-top:4px;border-top:1px solid #e2e8f0;padding-top:2px;">[Demo Study Area — Tamil Nadu]</div>
+            </div>
+          `;
+          L.marker(p.coords, { icon }).bindPopup(popup).addTo(markersGroupRef.current);
+        });
+      };
+
+      const renderMapOverlay = () => {
+        if (!mapRef.current || !layerGroupRef.current || !window.L) return;
+        layerGroupRef.current.clearLayers();
+
+        const [lat, lng] = selectedPreset.coordinates;
+        const delta = 0.012;
+        const bounds = [[lat - delta, lng - delta], [lat + delta, lng + delta]];
+
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+
+        if (mapLayer === 'sentinel') {
+          for (let x = 0; x < 512; x += 16) {
+            for (let y = 0; y < 512; y += 16) {
+              const noise = Math.sin(x * 0.05) * Math.cos(y * 0.05);
+              ctx.fillStyle = `rgb(${Math.floor(60 + noise * 30 + (x > 250 ? 50 : 0))}, ${Math.floor(110 + noise * 40)}, ${Math.floor(70 + noise * 20)})`;
+              ctx.fillRect(x, y, 16, 16);
+            }
+          }
+        } else if (mapLayer === 'superres') {
+          const grad = ctx.createLinearGradient(0, 0, 512, 512);
+          grad.addColorStop(0, '#2d6a4f'); grad.addColorStop(1, '#cad2c5');
+          ctx.fillStyle = grad; ctx.fillRect(0, 0, 512, 512);
+          ctx.strokeStyle = '#f8fafc'; ctx.lineWidth = 4;
+          ctx.beginPath(); ctx.moveTo(180, 0); ctx.lineTo(180, 512); ctx.stroke();
+          ctx.fillStyle = '#ef4444'; ctx.fillRect(260, 140, 36, 28); ctx.fillRect(320, 150, 44, 32);
+        } else if (mapLayer === 'landcover') {
+          ctx.fillStyle = 'rgba(14, 165, 233, 0.9)'; ctx.beginPath(); ctx.ellipse(120, 380, 100, 70, Math.PI / 6, 0, 2 * Math.PI); ctx.fill();
+          ctx.fillStyle = 'rgba(16, 185, 129, 0.85)'; ctx.fillRect(0, 0, 220, 220);
+          ctx.fillStyle = 'rgba(234, 179, 8, 0.85)'; ctx.fillRect(230, 0, 282, 200);
+          ctx.fillStyle = 'rgba(132, 204, 22, 0.85)'; ctx.fillRect(0, 230, 200, 120);
+          ctx.fillStyle = 'rgba(239, 68, 68, 0.9)'; ctx.fillRect(240, 210, 272, 160);
+          ctx.fillStyle = 'rgba(217, 119, 6, 0.85)'; ctx.fillRect(240, 380, 272, 132);
+        } else if (mapLayer === 'uncertainty') {
+          const grad = ctx.createRadialGradient(256, 256, 40, 256, 256, 250);
+          grad.addColorStop(0, 'rgba(16, 185, 129, 0.4)');
+          grad.addColorStop(0.5, 'rgba(234, 179, 8, 0.7)');
+          grad.addColorStop(1, 'rgba(239, 68, 68, 0.85)');
+          ctx.fillStyle = grad; ctx.fillRect(0, 0, 512, 512);
+        }
+
+        const overlay = L.imageOverlay(canvas.toDataURL(), bounds, { opacity: mapOpacity / 100 });
+        layerGroupRef.current.addLayer(overlay);
+      };
+
+      const filteredBands = selectedBandRes === 'All'
+        ? SATELLITE_BANDS
+        : SATELLITE_BANDS.filter(b => b.spatialResolution === selectedBandRes);
+
+      return (
+        <div className="min-h-screen bg-[#080d1a] text-slate-100 font-sans">
+          
+          {/* HEADER */}
+          <header className="fixed top-0 left-0 right-0 z-50 bg-[#080d1a]/90 backdrop-blur-md border-b border-cyan-500/20 py-3">
+            <div className="max-w-7xl mx-auto px-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-cyan-950 border border-cyan-400/40 flex items-center justify-center text-cyan-400 font-bold">
+                  🛰️
+                </div>
+                <div>
+                  <span className="font-bold text-white tracking-tight">GeoDL<span className="text-cyan-400">.Immersion</span></span>
+                  <p className="text-[10px] text-slate-400 font-mono">Sentinel-2 &bull; Super-Resolution</p>
+                </div>
+              </div>
+
+              <nav className="hidden md:flex items-center gap-3 text-xs font-medium text-slate-300">
+                <a href="#hero" className="hover:text-cyan-300">Overview</a>
+                <a href="#field-observations" className="hover:text-cyan-300">Field Study</a>
+                <a href="#problem" className="hover:text-cyan-300">Problem</a>
+                <a href="#solution" className="hover:text-cyan-300">Solution</a>
+                <a href="#methodology" className="hover:text-cyan-300">Methodology</a>
+                <a href="#satellite-data" className="hover:text-cyan-300">Sentinel-2</a>
+                <a href="#interactive-demo" className="hover:text-cyan-300">Map Demo</a>
+                <a href="#validation" className="hover:text-cyan-300">Validation</a>
+                <a href="#applications" className="hover:text-cyan-300">Applications</a>
+                <a href="#about" className="hover:text-cyan-300">Academic Info</a>
+              </nav>
+
+              <a href="#interactive-demo" className="px-3 py-1.5 rounded-lg text-xs font-bold bg-cyan-500 text-slate-950 hover:bg-cyan-400">
+                Launch Map Demo
+              </a>
+            </div>
+          </header>
+
+          {/* HERO */}
+          <section id="hero" className="pt-32 pb-20 px-4 text-center space-y-6 max-w-5xl mx-auto">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-cyan-950/80 border border-cyan-500/40 text-cyan-300 text-xs font-mono">
+              🎓 College Immersion Field Research Project &bull; 2025–2026
+            </div>
+            <h1 className="text-3xl sm:text-5xl font-extrabold text-white leading-tight">
+              Land Cover Analysis Using <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">Satellite Imagery</span> and Deep Learning
+            </h1>
+            <p className="text-lg sm:text-xl text-slate-300 font-medium">
+              “Connecting Ground Observations with Intelligent Satellite-Based Mapping”
+            </p>
+            <p className="text-sm text-slate-400 max-w-3xl mx-auto leading-relaxed">
+              Synthesizing real-world terrestrial field study observations with Sentinel-2 multispectral remote sensing. 
+              Addressing the spatial resolution and mixed-pixel barrier through deep neural super-resolution and semantic land-cover segmentation.
+            </p>
+            <div className="flex flex-wrap justify-center gap-4 pt-2">
+              <a href="#field-observations" className="px-6 py-3 rounded-xl text-xs font-bold bg-cyan-500 text-slate-950 hover:bg-cyan-400 shadow-lg">Explore Field Study</a>
+              <a href="#methodology" className="px-6 py-3 rounded-xl text-xs font-bold bg-slate-900 text-white border border-slate-700 hover:border-slate-500">View Methodology</a>
+              <a href="#interactive-demo" className="px-6 py-3 rounded-xl text-xs font-bold bg-cyan-950 text-cyan-300 border border-cyan-500/40">Launch Map Demo</a>
+            </div>
+          </section>
+
+          {/* FIELD OBSERVATIONS */}
+          <section id="field-observations" className="py-20 max-w-7xl mx-auto px-4 border-t border-slate-800 space-y-12">
+            <div>
+              <div className="text-cyan-400 text-xs font-mono mb-1">01 &bull; Immersion Field Study</div>
+              <h2 className="text-2xl sm:text-3xl font-extrabold text-white">Field Observations & Ground Reality</h2>
+              <p className="text-xs sm:text-sm text-slate-400 mt-1 max-w-3xl">
+                Ground-level observations of six primary terrestrial features and their representation challenges in medium-resolution satellite imagery.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {FIELD_OBSERVATIONS.map(obs => (
+                <div key={obs.id} className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between space-y-4">
+                  <div className="space-y-3">
+                    <div className="h-40 bg-slate-950 rounded-xl flex flex-col items-center justify-center p-4 text-center border border-slate-800 relative overflow-hidden">
+                      {customPhotos[obs.id] ? (
+                        <img src={customPhotos[obs.id]} className="w-full h-full object-cover rounded-lg" />
+                      ) : (
+                        <div>
+                          <div className="text-3xl mb-2">{obs.icon}</div>
+                          <span className="text-[10px] font-mono text-cyan-400 uppercase tracking-wider block">Study Area &bull; Ground Camera</span>
+                          <p className="text-xs text-slate-400 mt-1">{obs.placeholder}</p>
+                        </div>
+                      )}
+                      <label className="absolute top-2 right-2 cursor-pointer p-1 rounded bg-slate-900/90 text-cyan-300 text-[10px] font-mono border border-slate-700">
+                        Upload
+                        <input type="file" accept="image/*" className="hidden" onChange={(e) => handlePhotoUpload(e, obs.id)} />
+                      </label>
+                    </div>
+
+                    <h3 className="text-base font-bold text-white">{obs.title}</h3>
+                    <div className="text-xs bg-slate-950 p-3 rounded-lg border border-slate-800/80 text-slate-300 space-y-1">
+                      <span className="text-[10px] font-mono text-emerald-400 font-bold block">Ground Observation:</span>
+                      <p>{obs.groundDescription}</p>
+                    </div>
+                    <div className="text-xs bg-amber-950/20 p-3 rounded-lg border border-amber-500/20 text-slate-300 space-y-1">
+                      <span className="text-[10px] font-mono text-amber-300 font-bold block">10m Satellite Challenge:</span>
+                      <p>{obs.satelliteChallenge}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {obs.tags.map(t => <span key={t} className="text-[10px] font-mono bg-slate-800 px-2 py-0.5 rounded text-slate-400">#{t}</span>)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* PROBLEM IDENTIFIED & COMPARISON SLIDER */}
+          <section id="problem" className="py-20 max-w-7xl mx-auto px-4 border-t border-slate-800 space-y-12">
+            <div>
+              <div className="text-amber-400 text-xs font-mono mb-1">02 &bull; Problem Formulation</div>
+              <h2 className="text-2xl sm:text-3xl font-extrabold text-white">Problem Identified: Resolution & Mixed Pixels</h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="p-4 bg-slate-900 rounded-xl border border-slate-800">
+                <span className="text-amber-400 font-bold text-xs block mb-1">Limited Spatial Resolution</span>
+                <p className="text-xs text-slate-400">10m–60m pixel sizes span 100 m² to 3,600 m² on the ground.</p>
+              </div>
+              <div className="p-4 bg-slate-900 rounded-xl border border-slate-800">
+                <span className="text-red-400 font-bold text-xs block mb-1">Mixed Pixel Phenomenon</span>
+                <p className="text-xs text-slate-400">Heterogeneous features merge into hybrid averaged spectral signatures.</p>
+              </div>
+              <div className="p-4 bg-slate-900 rounded-xl border border-slate-800">
+                <span className="text-cyan-400 font-bold text-xs block mb-1">Loss of Small/Fine Features</span>
+                <p className="text-xs text-slate-400">Narrow roads and parcel bunds fragment into background noise.</p>
+              </div>
+              <div className="p-4 bg-slate-900 rounded-xl border border-slate-800">
+                <span className="text-purple-400 font-bold text-xs block mb-1">Reduced Analytical Detail</span>
+                <p className="text-xs text-slate-400">Limits precision agricultural cadastres and localized municipal mapping.</p>
+              </div>
+            </div>
+
+            {/* Visual Comparison Simulator */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden p-6 space-y-4">
+              <div className="flex justify-between items-center">
+                <h3 className="text-sm font-bold text-white">Illustrative Ground Reality vs 10m Satellite Representation</h3>
+                <div className="text-xs font-mono text-cyan-300">Drag Slider: {sliderPos}%</div>
+              </div>
+              <div className="relative h-64 bg-slate-950 rounded-xl overflow-hidden border border-slate-800">
+                <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-xs">
+                  <div className="w-full h-full p-4 grid grid-cols-2 gap-4">
+                    <div className="bg-emerald-950/40 p-4 rounded border border-emerald-500/30">
+                      <span className="font-bold text-emerald-400 block mb-1">Ground Reality (Sub-Meter Detail)</span>
+                      <p className="text-xs text-slate-300">Sharp road boundaries, distinct building corners, clear crop rows, and individual trees.</p>
+                    </div>
+                    <div className="bg-amber-950/40 p-4 rounded border border-amber-500/30">
+                      <span className="font-bold text-amber-400 block mb-1">Medium-Res Satellite (10m Footprint)</span>
+                      <p className="text-xs text-slate-300">Aggregated 100 m² pixel cells, blurry boundary edges, and composite spectral radiance.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <input type="range" min="0" max="100" value={sliderPos} onChange={(e) => setSliderPos(Number(e.target.value))} className="w-full accent-cyan-400 cursor-pointer" />
+            </div>
+          </section>
+
+          {/* PROPOSED SOLUTION & PIPELINE */}
+          <section id="solution" className="py-20 max-w-7xl mx-auto px-4 border-t border-slate-800 space-y-12">
+            <div>
+              <div className="text-cyan-400 text-xs font-mono mb-1">03 &bull; Solution Framework</div>
+              <h2 className="text-2xl sm:text-3xl font-extrabold text-white">Deep Learning-Based Super-Resolution Mapping</h2>
+              <p className="text-xs sm:text-sm text-slate-400 mt-1 max-w-3xl">
+                The system takes medium-resolution Sentinel-2 imagery and uses deep learning to estimate finer spatial information.
+              </p>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center space-y-6 max-w-4xl mx-auto">
+              <div className="p-4 bg-slate-950 rounded-xl border border-cyan-500/30 font-bold text-sm">
+                🛰️ Sentinel-2 Imagery (13 Bands, 10m–60m BOA)
+              </div>
+              <div className="text-cyan-400 font-mono">↓</div>
+              <div className="p-4 bg-slate-950 rounded-xl border border-slate-700 font-bold text-sm">
+                ⚙️ Pre-processing (Cloud/Shadow SCL Masking, Normalization, 10m Grid Alignment)
+              </div>
+              <div className="text-cyan-400 font-mono">↓</div>
+              <div className="p-4 bg-cyan-950/50 rounded-xl border border-cyan-500/60 font-bold text-sm text-cyan-300">
+                🧠 Deep Learning Model (Residual Convolutional U-Net / Multi-scale Feature Extractor)
+              </div>
+              <div className="text-cyan-400 font-mono">↓</div>
+              <div className="p-4 bg-slate-950 rounded-xl border border-slate-700 font-bold text-sm">
+                ✨ Super-Resolution Mapping (PixelShuffle Sub-pixel Reconstruction to ~2.5m GSD)
+              </div>
+              <div className="text-cyan-400 font-mono">↓</div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="p-4 bg-slate-950 rounded-xl border border-cyan-500/40 text-xs flex flex-col justify-between space-y-2">
+                  <div>
+                    <span className="font-bold text-cyan-300 block mb-1">Fine-Resolution Imagery</span>
+                    <p className="text-slate-400">Reconstructed 4-Band multispectral raster</p>
+                  </div>
+                  <a href="#interactive-map" className="text-cyan-400 hover:underline text-[11px] font-mono inline-block">Explore in GIS Map &rarr;</a>
+                </div>
+                <div className="p-4 bg-slate-950 rounded-xl border border-emerald-500/40 text-xs flex flex-col justify-between space-y-2">
+                  <div>
+                    <span className="font-bold text-emerald-300 block mb-1">Land-Cover Map</span>
+                    <p className="text-slate-400">6 Thematic semantic segmentation classes</p>
+                  </div>
+                  <a href="#interactive-map" className="text-emerald-400 hover:underline text-[11px] font-mono inline-block">Explore in GIS Map &rarr;</a>
+                </div>
+                <div className="p-4 bg-slate-950 rounded-xl border border-purple-500/40 text-xs flex flex-col justify-between space-y-2">
+                  <div>
+                    <span className="font-bold text-purple-300 block mb-1">Confidence / Uncertainty Map</span>
+                    <p className="text-slate-400">Bayesian MC-Dropout entropy matrix</p>
+                  </div>
+                  <a href="#interactive-map" className="text-purple-400 hover:underline text-[11px] font-mono inline-block">Explore in GIS Map &rarr;</a>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* METHODOLOGY */}
+          <section id="methodology" className="py-20 max-w-7xl mx-auto px-4 border-t border-slate-800 space-y-12">
+            <div>
+              <div className="text-cyan-400 text-xs font-mono mb-1">04 &bull; Technical Methodology</div>
+              <h2 className="text-2xl sm:text-3xl font-extrabold text-white">10-Step Algorithmic Workflow</h2>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              <div className="lg:col-span-5 space-y-2 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                {METHODOLOGY_STEPS.map(step => (
+                  <div
+                    key={step.stepNumber}
+                    onClick={() => setSelectedStep(step)}
+                    className={`p-3.5 rounded-xl border cursor-pointer text-xs flex items-center justify-between ${
+                      selectedStep.stepNumber === step.stepNumber
+                        ? 'bg-cyan-950/70 border-cyan-500 text-white font-bold'
+                        : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    <span><strong className="text-cyan-400 mr-2">{step.stepNumber}</strong> {step.title}</span>
+                    <span>&rarr;</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+                <div className="flex items-center gap-3 border-b border-slate-800 pb-3">
+                  <span className="text-2xl font-mono font-bold text-cyan-400">{selectedStep.stepNumber}</span>
+                  <h3 className="text-lg font-bold text-white">{selectedStep.title}</h3>
+                </div>
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">{selectedStep.detailedDesc}</p>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div className="p-3 bg-slate-950 rounded border border-slate-800">
+                    <span className="text-[10px] font-mono text-slate-500 block">Inputs</span>
+                    <p className="text-slate-300">{selectedStep.inputs}</p>
+                  </div>
+                  <div className="p-3 bg-slate-950 rounded border border-slate-800">
+                    <span className="text-[10px] font-mono text-emerald-400 block">Outputs</span>
+                    <p className="text-slate-300">{selectedStep.outputs}</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1.5 pt-2">
+                  {selectedStep.tools.map(t => (
+                    <span key={t} className="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-950 text-cyan-300 border border-cyan-500/30">{t}</span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Model Architecture Note */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+              <div className="p-5 bg-gradient-to-br from-slate-900 to-cyan-950/40 border border-cyan-500/40 rounded-2xl space-y-2">
+                <span className="text-[10px] font-mono bg-cyan-500 text-slate-950 px-2 py-0.5 rounded font-bold">Initial Approach</span>
+                <h4 className="text-base font-bold text-white">CNN / U-Net (ResUNet)</h4>
+                <p className="text-xs text-slate-300">Residual convolutional encoder-decoder with skip connections. Baseline active model architecture.</p>
+              </div>
+              <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl space-y-2">
+                <span className="text-[10px] font-mono bg-purple-950 text-purple-300 border border-purple-500/40 px-2 py-0.5 rounded font-bold">Future Possibilities (Future Enhancements)</span>
+                <h4 className="text-base font-bold text-white">Transformers &bull; GANs &bull; Diffusion</h4>
+                <p className="text-xs text-slate-300">Swin-UNet, ESRGAN, and Latent Diffusion models planned for future investigation.</p>
+              </div>
+            </div>
+          </section>
+
+          {/* SATELLITE DATA */}
+          <section id="satellite-data" className="py-20 max-w-7xl mx-auto px-4 border-t border-slate-800 space-y-12">
+            <div>
+              <div className="text-cyan-400 text-xs font-mono mb-1">05 &bull; Satellite Data</div>
+              <h2 className="text-2xl sm:text-3xl font-extrabold text-white">Sentinel-2 Multispectral Specifications</h2>
+              <p className="text-xs sm:text-sm text-slate-400 mt-1">
+                13 Spectral Bands &bull; 4 native 10m bands (B2, B3, B4, B8) &bull; 20m and 60m auxiliary bands
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="p-4 bg-slate-900 border border-cyan-500/40 rounded-xl">
+                <span className="text-cyan-400 font-bold text-xs block">10 m Native Bands</span>
+                <p className="text-xs text-slate-300 mt-1">B2 (Blue), B3 (Green), B4 (Red), B8 (Broad NIR). 100 m² pixel footprint.</p>
+              </div>
+              <div className="p-4 bg-slate-900 border border-amber-500/40 rounded-xl">
+                <span className="text-amber-400 font-bold text-xs block">20 m Red-Edge & SWIR</span>
+                <p className="text-xs text-slate-300 mt-1">B5, B6, B7, B8A, B11, B12. Vegetation stress & moisture.</p>
+              </div>
+              <div className="p-4 bg-slate-900 border border-purple-500/40 rounded-xl">
+                <span className="text-purple-400 font-bold text-xs block">60 m Atmospheric</span>
+                <p className="text-xs text-slate-300 mt-1">B1, B9, B10. Coastal aerosol, water vapor, and cirrus masking.</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {SATELLITE_BANDS.map(b => (
+                <div key={b.band} className="p-3 bg-slate-950 border border-slate-800 rounded-lg text-xs space-y-1">
+                  <div className="flex justify-between font-mono font-bold">
+                    <span className="text-white">{b.band}</span>
+                    <span className="text-cyan-400">{b.spatialResolution}</span>
+                  </div>
+                  <div className="text-[11px] text-slate-300 truncate">{b.name}</div>
+                  <div className="text-[10px] text-slate-500 font-mono">{b.centralWavelength}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* INTERACTIVE MAP DEMO */}
+          <section id="interactive-demo" className="py-20 max-w-7xl mx-auto px-4 border-t border-slate-800 space-y-8">
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-cyan-400 text-xs font-mono">06 &bull; WebGIS Workspace</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-950 text-cyan-300 border border-cyan-500/40">Demo Study Area</span>
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-extrabold text-white">Interactive Map / Output Demo</h2>
+              </div>
+              <div className="px-3 py-1.5 rounded-full text-xs font-mono bg-amber-950 text-amber-300 border border-amber-500/40">
+                Demo / Prototype Data &bull; Not Actual Field Survey Location
+              </div>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl grid grid-cols-1 lg:grid-cols-4">
+              <div className="lg:col-span-3 relative h-[480px] bg-slate-950">
+                <div ref={mapContainerRef} className="w-full h-full"></div>
+                <div className="absolute top-4 left-4 z-20 flex flex-col gap-2">
+                  <div className="bg-slate-950/90 backdrop-blur px-2.5 py-1 rounded-md text-xs font-mono border border-cyan-500/40 text-cyan-300">
+                    📍 Demo Study Area: {selectedPreset.name.replace('Demo Study Area: ', '')}
+                  </div>
+                  <div className="bg-slate-900/90 backdrop-blur-md p-1.5 rounded-xl border border-slate-700 flex flex-wrap gap-1">
+                    {['sentinel', 'superres', 'landcover', 'uncertainty'].map(l => (
+                      <button
+                        key={l}
+                        onClick={() => setMapLayer(l)}
+                        className={`px-2.5 py-1 rounded text-xs font-mono capitalize ${
+                          mapLayer === l ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {l}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="absolute bottom-4 left-4 z-20 flex flex-wrap items-center gap-2">
+                  <div className="bg-slate-900/90 px-3 py-1.5 rounded-lg border border-slate-700 text-xs font-mono flex items-center gap-2">
+                    <span>Opacity:</span>
+                    <input type="range" min="10" max="100" value={mapOpacity} onChange={(e) => setMapOpacity(Number(e.target.value))} className="w-20 accent-cyan-400 cursor-pointer" />
+                    <span>{mapOpacity}%</span>
+                  </div>
+                  <button
+                    onClick={() => setShowDemoPins(!showDemoPins)}
+                    className="bg-slate-900/90 px-3 py-1.5 rounded-lg border border-slate-700 text-xs font-mono text-cyan-300 hover:text-white cursor-pointer"
+                  >
+                    {showDemoPins ? 'Hide Demo Markers' : 'Show Demo Markers'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-5 bg-slate-950 border-t lg:border-t-0 lg:border-l border-slate-800 space-y-4 text-xs font-mono">
+                <div className="border-b border-slate-800 pb-2">
+                  <span className="text-cyan-400 font-bold uppercase block mb-1">Pixel Probe Telemetry</span>
+                  <div className="text-slate-300">Lat: {probeData.lat}° N &bull; Lon: {probeData.lng}° E</div>
+                </div>
+                <div className="p-3 bg-slate-900 rounded-lg border border-slate-800 space-y-1">
+                  <span className="text-slate-500 text-[10px]">Predicted Class (Demo):</span>
+                  <div className="text-white font-bold flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full" style={{ backgroundColor: probeData.classColor }}></span>
+                    {probeData.predictedClass}
+                  </div>
+                  <div className="text-cyan-300 text-[11px]">Confidence: {probeData.confidence}%</div>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-slate-400 text-[10px] uppercase font-bold">Sample Demo Points</span>
+                  <div className="grid grid-cols-2 gap-1 text-[11px]">
+                    <div className="p-1 rounded bg-slate-900 border border-slate-800 text-emerald-300">🌲 Vegetation</div>
+                    <div className="p-1 rounded bg-slate-900 border border-slate-800 text-red-300">🏢 Built-up</div>
+                    <div className="p-1 rounded bg-slate-900 border border-slate-800 text-yellow-300">🌾 Agriculture</div>
+                    <div className="p-1 rounded bg-slate-900 border border-slate-800 text-cyan-300">💧 Water Body</div>
+                  </div>
+                </div>
+                <div className="pt-2 border-t border-slate-800/80 text-[10px] text-slate-500">
+                  * Powered by OpenStreetMap. Demo points for model prototyping across Tamil Nadu extents.
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* FIELD VALIDATION & METRICS */}
+          <section id="validation" className="py-20 max-w-7xl mx-auto px-4 border-t border-slate-800 space-y-12">
+            <div>
+              <div className="text-cyan-400 text-xs font-mono mb-1">07 &bull; Field Ground Truthing</div>
+              <h2 className="text-2xl sm:text-3xl font-extrabold text-white">Field Validation & Metrics Framework</h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-center">
+              <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl">
+                <span className="text-cyan-400 text-xs font-mono block">Stage 01</span>
+                <strong className="text-sm text-white">Field Observation</strong>
+              </div>
+              <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl">
+                <span className="text-amber-400 text-xs font-mono block">Stage 02</span>
+                <strong className="text-sm text-white">Satellite Footprint</strong>
+              </div>
+              <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl">
+                <span className="text-cyan-400 text-xs font-mono block">Stage 03</span>
+                <strong className="text-sm text-white">Model Output</strong>
+              </div>
+              <div className="p-4 bg-emerald-950 border border-emerald-500/40 rounded-xl">
+                <span className="text-emerald-400 text-xs font-mono block">Stage 04</span>
+                <strong className="text-sm text-white">Comparison / Validation</strong>
+              </div>
+            </div>
+
+            <div className="p-4 bg-amber-950/40 border border-amber-500/40 rounded-xl text-center text-xs font-mono text-amber-300">
+              Evaluation metrics to be calculated after model training. (IoU &bull; F1 Score &bull; RMSE &bull; PSNR &bull; SSIM)
+            </div>
+          </section>
+
+          {/* APPLICATIONS */}
+          <section id="applications" className="py-20 max-w-7xl mx-auto px-4 border-t border-slate-800 space-y-12">
+            <div>
+              <div className="text-cyan-400 text-xs font-mono mb-1">08 &bull; Applied Impact</div>
+              <h2 className="text-2xl sm:text-3xl font-extrabold text-white">Real-World Applications</h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="p-6 bg-slate-900 border border-slate-800 rounded-2xl space-y-3">
+                <div className="text-2xl">🌾</div>
+                <h3 className="text-base font-bold text-white">Agriculture</h3>
+                <ul className="text-xs text-slate-400 space-y-1">
+                  <li>&bull; Crop monitoring</li>
+                  <li>&bull; Field boundary analysis</li>
+                </ul>
+              </div>
+              <div className="p-6 bg-slate-900 border border-slate-800 rounded-2xl space-y-3">
+                <div className="text-2xl">🏙️</div>
+                <h3 className="text-base font-bold text-white">Urban Planning</h3>
+                <ul className="text-xs text-slate-400 space-y-1">
+                  <li>&bull; Building and road mapping</li>
+                  <li>&bull; Urban growth analysis</li>
+                </ul>
+              </div>
+              <div className="p-6 bg-slate-900 border border-slate-800 rounded-2xl space-y-3">
+                <div className="text-2xl">🚨</div>
+                <h3 className="text-base font-bold text-white">Disaster Assessment</h3>
+                <ul className="text-xs text-slate-400 space-y-1">
+                  <li>&bull; Flood mapping</li>
+                  <li>&bull; Damage assessment</li>
+                </ul>
+              </div>
+              <div className="p-6 bg-slate-900 border border-slate-800 rounded-2xl space-y-3">
+                <div className="text-2xl">🌿</div>
+                <h3 className="text-base font-bold text-white">Environment</h3>
+                <ul className="text-xs text-slate-400 space-y-1">
+                  <li>&bull; Forest monitoring</li>
+                  <li>&bull; Wetland & water monitoring</li>
+                </ul>
+              </div>
+            </div>
+          </section>
+
+          {/* TECH STACK */}
+          <section id="tech-stack" className="py-20 max-w-7xl mx-auto px-4 border-t border-slate-800 space-y-8">
+            <div>
+              <div className="text-cyan-400 text-xs font-mono mb-1">09 &bull; Technology Stack</div>
+              <h2 className="text-2xl sm:text-3xl font-extrabold text-white">Architecture & Libraries</h2>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 text-center">
+              <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl text-xs"><span className="text-amber-400 font-bold block">Python</span>Programming</div>
+              <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl text-xs"><span className="text-red-400 font-bold block">PyTorch</span>Deep Learning</div>
+              <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl text-xs"><span className="text-cyan-400 font-bold block">Rasterio / GDAL</span>Image Processing</div>
+              <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl text-xs"><span className="text-emerald-400 font-bold block">GeoPandas / PostGIS</span>GIS & Spatial</div>
+              <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl text-xs"><span className="text-purple-400 font-bold block">FastAPI / Leaflet</span>API & WebGIS</div>
+              <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl text-xs"><span className="text-sky-400 font-bold block">Docker + GPU</span>Deployment</div>
+            </div>
+          </section>
+
+          {/* CONCLUSION */}
+          <section id="conclusion" className="py-20 max-w-7xl mx-auto px-4 border-t border-slate-800 space-y-6">
+            <div className="p-8 bg-gradient-to-br from-slate-900 to-cyan-950/40 border border-cyan-500/40 rounded-3xl space-y-4">
+              <h2 className="text-2xl font-bold text-white">Project Conclusion</h2>
+              <p className="text-sm text-slate-300 leading-relaxed">
+                The immersion study helped identify the difference between real-world ground features and their representation in medium-resolution satellite imagery. The proposed project uses deep learning, satellite image processing and GIS to estimate finer spatial information and improve land-cover mapping.
+              </p>
+            </div>
+          </section>
+
+          {/* ABOUT / ACADEMIC PROFILE */}
+          <section id="about" className="py-20 max-w-7xl mx-auto px-4 border-t border-slate-800 space-y-8">
+            <div>
+              <div className="text-cyan-400 text-xs font-mono mb-1">10 &bull; Academic Metadata</div>
+              <h2 className="text-2xl sm:text-3xl font-extrabold text-white">Academic Project Details</h2>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-mono">
+              <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl"><span className="text-slate-500 block">Student:</span><strong className="text-white text-sm">[Student Name]</strong></div>
+              <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl"><span className="text-slate-500 block">Department:</span><strong className="text-white text-sm">[Department Name]</strong></div>
+              <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl"><span className="text-slate-500 block">College:</span><strong className="text-white text-sm">[College Name]</strong></div>
+              <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl"><span className="text-slate-500 block">Guide:</span><strong className="text-white text-sm">[Faculty Guide Name]</strong></div>
+              <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl"><span className="text-slate-500 block">Academic Year:</span><strong className="text-white text-sm">2025 – 2026</strong></div>
+              <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl"><span className="text-slate-500 block">Project Type:</span><strong className="text-cyan-400 text-sm">College Immersion Project</strong></div>
+            </div>
+          </section>
+
+          {/* FOOTER */}
+          <footer className="py-12 bg-slate-950 border-t border-slate-800 text-center text-xs text-slate-500">
+            &copy; {new Date().getFullYear()} Immersion Project: Land Cover Analysis Using Satellite Imagery and Deep Learning.
+          </footer>
+
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
 </html>
